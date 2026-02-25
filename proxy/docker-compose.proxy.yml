@@ -1,0 +1,28 @@
+services:
+  traefik:
+    image: traefik:lstest
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--certificatesresolvers.semao0resolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.semao0resolver.acme.email=semabelou@gmail.com"
+      - "--certificatesresolvers.semao0resolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - "./letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - web_network
+
+networks:
+  web_network:
+    external: false

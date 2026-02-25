@@ -1,0 +1,48 @@
+stages:
+  - deploy
+
+.ssh_setup: &ssh_setup
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | base64 -d | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo -e "Host *\n\tStrictHostKeyChecking no\n\tPort $TARGET_PORT" > ~/.ssh/config
+
+.deploy_template:
+  stage: deploy
+  image: docker:27.5.0
+  <<: *ssh_setup
+  script:
+    - ssh $TARGET_USER@$TARGET_HOST "mkdir -p $INFRA_PATH/proxy"
+
+    - scp -r proxy/* $TARGET_USER@$TARGET_HOST:$INFRA_PATH/proxy/
+
+    - ssh $TARGET_USER@$TARGET_HOST "
+        cd $INFRA_PATH/proxy &&
+        docker compose -f docker-compose.proxy.yml pull &&
+        docker compose -f docker-compose.proxy.yml up -d --remove-orphans
+      "
+
+deploy_stage:
+  extends: .deploy_template
+  variables:
+    INFRA_PATH: "$BASE_DEPLOY_PATH/infrastructure"
+    TARGET_PORT: $SSH_PORT_STAGE
+    TARGET_HOST: $SSH_HOST_STAGE
+    TARGET_USER: $SSH_USER_STAGE
+  environment:
+    name: staging
+  only:
+    - stage
+
+deploy_prod:
+  extends: .deploy_template
+  variables:
+    INFRA_PATH: "$BASE_DEPLOY_PATH/infrastructure"
+    TARGET_PORT: $SSH_PORT_PROD
+    TARGET_HOST: $SSH_HOST_PROD
+    TARGET_USER: $SSH_USER_PROD
+  environment:
+    name: production
+  only:
+    - main
