@@ -19,6 +19,7 @@ stages:
 
     - ssh $TARGET_USER@$TARGET_HOST "
         cd $INFRA_PATH/proxy &&
+        (docker network inspect web_network >/dev/null 2>&1 || docker network create web_network || docker network inspect web_network >/dev/null) &&
         docker compose -f docker-compose.proxy.yml pull &&
         docker compose -f docker-compose.proxy.yml up -d --remove-orphans
       "
