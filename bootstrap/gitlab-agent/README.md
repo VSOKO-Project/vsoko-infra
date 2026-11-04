@@ -6,9 +6,13 @@
 
 Агент работает в `gitlab-agent-vsoko`, имеет Role только в `vsoko`.
 Он может управлять workloads, конфигурацией, Secrets, PVC и ExternalSecrets,
-но не namespace, ClusterSecretStore, RBAC или своим namespace.
+но не namespace, ClusterSecretStore, RBAC или workloads своего namespace.
+В служебном namespace разрешены только Lease для координации работы агента.
 Группа считается одной зоной доверия: её pipeline имеют доступ к секретам VSOKO.
 RBAC не заменяет Pod Security и не изолирует недоверенные контейнеры на общих ВМ.
+
+Подключение использует `wss://kas.gitlab.com`: стандартный gRPC endpoint
+возвращал Cloudflare 403 из этой сети.
 
 Конфигурация доступа лежит в `.gitlab/agents/vsoko/config.yaml` в `main`.
 Регистрация и агентский токен создаются через GitLab Kubernetes Agent API.
