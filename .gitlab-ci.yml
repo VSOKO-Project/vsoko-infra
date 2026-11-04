@@ -24,7 +24,7 @@ validate:
   stage: validate
   interruptible: true
   script:
-    - kubectl apply --dry-run=server -f k8s/secrets/databases.yml -f k8s/postgres/ -f k8s/redis/
+    - kubectl apply --dry-run=server -f k8s/secrets/ -f k8s/postgres/ -f k8s/redis/
 
 deploy:
   stage: deploy
@@ -37,8 +37,8 @@ deploy:
   allow_failure: false
   manual_confirmation: "Развернуть инфраструктуру VSOKO в production?"
   script:
-    - kubectl apply -f k8s/secrets/databases.yml
-    - kubectl -n vsoko wait --for=condition=Ready externalsecret/postgres-admin externalsecret/postgres-app externalsecret/redis --timeout=120s
+    - kubectl apply -f k8s/secrets/
+    - kubectl -n vsoko wait --for=condition=Ready externalsecret/postgres-admin externalsecret/postgres-app externalsecret/redis externalsecret/gitlab-registry --timeout=120s
     - kubectl apply -f k8s/postgres/ -f k8s/redis/
     - kubectl -n vsoko rollout status statefulset/postgres --timeout=300s
     - kubectl -n vsoko rollout status statefulset/redis --timeout=300s

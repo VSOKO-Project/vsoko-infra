@@ -5,8 +5,10 @@
 Контекст CI: `vsoko/vsoko-infra:vsoko`.
 
 Агент работает в `gitlab-agent-vsoko`, имеет Role только в `vsoko`.
-Он может управлять workloads, конфигурацией, Secrets, PVC и ExternalSecrets,
+Он может управлять workloads, конфигурацией, Secrets, PVC, SecretStores и ExternalSecrets,
 но не namespace, ClusterSecretStore, RBAC или workloads своего namespace.
+Certificates в `vsoko` доступны для чтения и ожидания готовности TLS;
+ClusterIssuer управляет администратор.
 В служебном namespace разрешены только Lease для координации работы агента
 и запись служебных Events.
 Группа считается одной зоной доверия: её pipeline имеют доступ к секретам VSOKO.
@@ -33,7 +35,7 @@ helm upgrade --install vsoko gitlab-agent \
 kubectl -n gitlab-agent-vsoko get pods
 ```
 
-Namespace приложения и `k8s/secrets/gitlab-store.yml` также применяет администратор
-один раз перед первым деплоем. Pipeline группы применяет только ExternalSecrets
-и ресурсы приложений внутри `vsoko` — ему не нужны cluster-admin права.
+Namespace приложения и Secret `gitlab-token` создаёт администратор перед первым
+деплоем. Pipeline группы применяет SecretStores, ExternalSecrets и ресурсы
+приложений внутри `vsoko` — ему не нужны cluster-admin права.
 GitLab Runner остаётся отдельным компонентом, исполняющим jobs.

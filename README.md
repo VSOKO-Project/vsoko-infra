@@ -9,8 +9,8 @@ GitLab Agent `vsoko` настроен для всей группы. Деплой
 .gitlab/agents/vsoko/config.yaml # доступ всей группы VSOKO
 bootstrap/gitlab-agent/        # установка агента и его права
 k8s/namespace.yaml
-k8s/secrets/gitlab-store.yml  # ClusterSecretStore → GitLab
-k8s/secrets/databases.yml     # GitLab Variables → три Kubernetes Secret
+k8s/secrets/store.yaml  # SecretStore → Variables infra
+k8s/secrets/external-secrets.yaml     # GitLab Variables → Kubernetes Secrets
 k8s/postgres/                 # Service, StatefulSet, PVC, инициализация пользователя
 k8s/redis/                    # Service, StatefulSet, PVC
 ```
@@ -26,12 +26,17 @@ k8s/redis/                    # Service, StatefulSet, PVC
 | `POSTGRES_ADMIN_PASSWORD` | `postgres-admin / password` | Администратор `postgres` |
 | `POSTGRES_APP_PASSWORD` | `postgres-app / password` | Пользователь API `vsoko_app` |
 | `REDIS_PASSWORD` | `redis / password` | Авторизация Redis |
+| `REGISTRY_USERNAME` / `REGISTRY_TOKEN` | `gitlab-registry / .dockerconfigjson` | Group Deploy Token с `read_registry` для скачивания образов API и фронта |
 
 Токен GitLab уже создан вручную в Secret `vsoko/gitlab-token`, поле `token`.
 Это fine-grained PAT: доступ к группе `vsoko`, разрешение `Variable → Read`.
 Он не хранится в Git; его нужно заменить перед истечением срока действия.
-`ClusterSecretStore gitlab-vsoko` ссылается на этот Secret и разрешает использование
+`SecretStore gitlab-vsoko` ссылается на этот Secret и разрешает использование
 только из namespace `vsoko`. Он читает переменные конкретного проекта, а не всей группы.
+Отдельный `SecretStore gitlab-vsoko-api` описан в репозитории API (`k8s/secrets/store.yaml`),
+использует тот же токен, но читает
+Variables проекта `vsoko-api` (JWT и OpenRouter). Это разделение источников,
+а не дополнительная граница прав доступа.
 
 ESO сверяет значения раз в минуту. `Orphan` сохраняет созданный Secret при удалении
 ExternalSecret; `Retain` сохраняет данные при исчезновении переменной из GitLab.
@@ -46,7 +51,7 @@ SSH-ключи и личный kubeconfig в CI не нужны: подключ�
 - `validate` — при merge request и на `main`: проверка ресурсов приложения через
   Kubernetes API (`--dry-run=server`), без сохранения изменений в кластере.
 - `deploy` — только кнопкой из защищённой `main`, после успешной проверки:
-  ExternalSecrets → ожидание синхронизации → PostgreSQL/Redis → ожидание готовности.
+  SecretStore + ExternalSecrets → ожидание синхронизации → PostgreSQL/Redis → ожидание готовности.
   `resource_group` не позволяет двум deploy jobs выполняться одновременно.
 
 Первый запуск: **Build → Pipelines → pipeline последнего коммита → deploy → Play**.
@@ -56,18 +61,18 @@ Pipeline со статусом blocked/manual после проверки ожи
 ## Первоначальная настройка администратором
 
 Уже подготовлены ESO, GitLab Agent, namespace `vsoko`, токен `vsoko/gitlab-token`
-и `ClusterSecretStore gitlab-vsoko`. При восстановлении кластера сначала создаются
+и `SecretStore gitlab-vsoko`. При восстановлении кластера сначала создаются
 namespace и токен (из менеджера паролей), затем подключение к GitLab:
 
 ```bash
 kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/secrets/gitlab-store.yml
-kubectl wait --for=condition=Ready clustersecretstore/gitlab-vsoko --timeout=120s
+kubectl apply -f k8s/secrets/store.yaml
+kubectl wait --for=condition=Ready secretstore/gitlab-vsoko --timeout=120s
 ```
 
-ClusterSecretStore, namespace и RBAC не применяются pipeline группы — ими управляет
+Namespace и RBAC не применяются pipeline группы — ими управляет
 администратор. После изменения этих файлов нужно отдельно проверить и применить их
-администраторским доступом. CI проверяет только ресурсы, которые сам разворачивает.
+администраторским доступом. SecretStore и ExternalSecrets применяются и проверяются pipeline соответствующего проекта.
 
 ## PostgreSQL и Redis
 
@@ -82,8 +87,9 @@ ClusterSecretStore, namespace и RBAC не применяются pipeline гр�
 На **пустом томе** PostgreSQL создаёт администратора `postgres` и базу `vsoko`,
 затем `postgres-init` создаёт `vsoko_app` и передаёт ему владение этой базой.
 Пользователь приложения не superuser, не может создавать роли или другие базы.
-Он может изменять схему своей базы: текущий API вызывает EF Core `MigrateAsync()`
-при старте. Отдельные credentials для миграций можно выделить позже.
+Он может изменять схему своей базы: миграции запускает отдельный Job с EF bundle
+перед обновлением API. В production API не меняет схему при старте.
+Отдельные credentials для миграций можно выделить позже.
 
 API должен получать только `postgres-app` и `redis`, без `postgres-admin`:
 
@@ -121,6 +127,6 @@ PVC сохраняются при удалении StatefulSet, но удале�
 Один агент `vsoko` для всей группы VSOKO, зарегистрирован в `vsoko/vsoko-infra`.
 Namespace агента: `gitlab-agent-vsoko`. Контекст CI: `vsoko/vsoko-infra:vsoko`.
 Все проекты и подгруппы VSOKO используют одинаковые права внутри namespace `vsoko`.
-ClusterSecretStore, namespace и права RBAC остаются под управлением администратора.
+Namespace и права RBAC остаются под управлением администратора.
 Установка и параметры: [bootstrap/gitlab-agent](bootstrap/gitlab-agent/README.md).
 Агент предоставляет подключение; команды из `.gitlab-ci.yml` выполняет GitLab-hosted Runner.
