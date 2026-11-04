@@ -7,7 +7,8 @@
 Агент работает в `gitlab-agent-vsoko`, имеет Role только в `vsoko`.
 Он может управлять workloads, конфигурацией, Secrets, PVC и ExternalSecrets,
 но не namespace, ClusterSecretStore, RBAC или workloads своего namespace.
-В служебном namespace разрешены только Lease для координации работы агента.
+В служебном namespace разрешены только Lease для координации работы агента
+и запись служебных Events.
 Группа считается одной зоной доверия: её pipeline имеют доступ к секретам VSOKO.
 RBAC не заменяет Pod Security и не изолирует недоверенные контейнеры на общих ВМ.
 
