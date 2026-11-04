@@ -1,49 +1,45 @@
 stages:
+  - validate
   - deploy
 
-.ssh_setup: &ssh_setup
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+variables:
+  KUBE_CONTEXT: vsoko/vsoko-infra:vsoko
+
+default:
+  image:
+    name: alpine/kubectl:1.37.1
+    entrypoint: [""]
+  tags:
+    - saas-linux-small-amd64
   before_script:
-    - eval $(ssh-agent -s)
-    - echo "$SSH_PRIVATE_KEY" | base64 -d | ssh-add -
-    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
-    - echo -e "Host *\n\tStrictHostKeyChecking no\n\tPort $TARGET_PORT" > ~/.ssh/config
+    - kubectl config use-context "$KUBE_CONTEXT"
+  timeout: 10m
 
-.deploy_template:
-  stage: deploy
-  image: docker:27.5.0
-  <<: *ssh_setup
+validate:
+  stage: validate
+  interruptible: true
   script:
-    - ssh $TARGET_USER@$TARGET_HOST "mkdir -p $INFRA_PATH/proxy"
+    - kubectl apply --dry-run=server -f k8s/secrets/databases.yml -f k8s/postgres/ -f k8s/redis/
 
-    - scp -r proxy/* $TARGET_USER@$TARGET_HOST:$INFRA_PATH/proxy/
-
-    - ssh $TARGET_USER@$TARGET_HOST "
-        cd $INFRA_PATH/proxy &&
-        (docker network inspect web_network >/dev/null 2>&1 || docker network create web_network || docker network inspect web_network >/dev/null) &&
-        docker compose -f docker-compose.proxy.yml pull &&
-        docker compose -f docker-compose.proxy.yml up -d --remove-orphans
-      "
-
-deploy_stage:
-  extends: .deploy_template
-  variables:
-    INFRA_PATH: "$BASE_DEPLOY_PATH/infrastructure"
-    TARGET_PORT: $SSH_PORT_STAGE
-    TARGET_HOST: $SSH_HOST_STAGE
-    TARGET_USER: $SSH_USER_STAGE
-  environment:
-    name: staging
-  only:
-    - stage
-
-deploy_prod:
-  extends: .deploy_template
-  variables:
-    INFRA_PATH: "$BASE_DEPLOY_PATH/infrastructure"
-    TARGET_PORT: $SSH_PORT_PROD
-    TARGET_HOST: $SSH_HOST_PROD
-    TARGET_USER: $SSH_USER_PROD
+deploy:
+  stage: deploy
+  resource_group: vsoko-production
   environment:
     name: production
-  only:
-    - main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+  allow_failure: false
+  manual_confirmation: "Развернуть инфраструктуру VSOKO в production?"
+  script:
+    - kubectl apply -f k8s/secrets/databases.yml
+    - kubectl -n vsoko wait --for=condition=Ready externalsecret/postgres-admin externalsecret/postgres-app externalsecret/redis --timeout=120s
+    - kubectl apply -f k8s/postgres/ -f k8s/redis/
+    - kubectl -n vsoko rollout status statefulset/postgres --timeout=300s
+    - kubectl -n vsoko rollout status statefulset/redis --timeout=300s
+    - kubectl -n vsoko get pods,pvc,svc
