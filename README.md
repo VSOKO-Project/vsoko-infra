@@ -130,3 +130,7 @@ Namespace агента: `gitlab-agent-vsoko`. Контекст CI: `vsoko/vsoko-
 Namespace и права RBAC остаются под управлением администратора.
 Установка и параметры: [bootstrap/gitlab-agent](bootstrap/gitlab-agent/README.md).
 Агент предоставляет подключение; команды из `.gitlab-ci.yml` выполняет GitLab-hosted Runner.
+
+## System guide
+
+[Product, architecture, integration and operations](https://gitlab.com/vsoko/specs).
