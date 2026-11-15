@@ -1,12 +1,12 @@
 stages:
   - validate
   - deploy
-
 workflow:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"
+      when: never
+    - if: $CI_COMMIT_BRANCH
 variables:
   KUBE_CONTEXT: vsoko/vsoko-infra:vsoko
 
@@ -16,16 +16,14 @@ default:
     entrypoint: [""]
   tags:
     - saas-linux-small-amd64
-  before_script:
-    - kubectl config use-context "$KUBE_CONTEXT"
   timeout: 10m
 
 validate:
   stage: validate
   interruptible: true
   script:
-    - kubectl apply --dry-run=server -f k8s/secrets/ -f k8s/postgres/ -f k8s/redis/
-
+    - cp .gitlab/ci/kustomization.validate.yaml kustomization.yaml
+    - kubectl kustomize . > /dev/null
 deploy:
   stage: deploy
   resource_group: vsoko-production
@@ -38,8 +36,13 @@ deploy:
   manual_confirmation: "Развернуть инфраструктуру VSOKO в production?"
   script:
     - kubectl apply -f k8s/secrets/
-    - kubectl -n vsoko wait --for=condition=Ready externalsecret/postgres-admin externalsecret/postgres-app externalsecret/redis externalsecret/gitlab-registry --timeout=120s
+    - kubectl -n vsoko wait --for=condition=Ready externalsecret/postgres-admin externalsecret/postgres-app
+      externalsecret/redis externalsecret/gitlab-registry --timeout=120s
     - kubectl apply -f k8s/postgres/ -f k8s/redis/
     - kubectl -n vsoko rollout status statefulset/postgres --timeout=300s
     - kubectl -n vsoko rollout status statefulset/redis --timeout=300s
     - kubectl -n vsoko get pods,pvc,svc
+  before_script:
+    - kubectl config use-context "$KUBE_CONTEXT"
+include:
+  - local: .gitlab/ci/security.yml
